@@ -2,6 +2,7 @@
 #include "uart.h"
 #include "soil.h"
 #include "temperature_reader.h"
+#include "waterpump.h"
 #include <util/delay.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -13,6 +14,7 @@
 static uint8_t _buff[100];
 static uint8_t _index = 0;
 volatile static bool _done = false;
+static uint8_t pump_time = 0;
 
 void console_rx(uint8_t _rx)
 {
@@ -33,6 +35,20 @@ void console_rx(uint8_t _rx)
     }
 }
 
+// Funktion til at modtage TCP-besked og handle på vandpumpen
+void handle_tcp_waterpump_command(char* message) {
+    if (strstr(message, "water")) {
+        char* time_str = strstr(message, "\"sec\":");
+        if (time_str) {
+            pump_time = atoi(time_str + 6);  // Konverter tiden fra string til integer
+            if (pump_time > 0) {
+                waterpump_run(pump_time);  // Kører pumpen i den ønskede tid
+            }
+        }
+    }
+    //Besked eksempel: {"cmd":"water", "sec":10}
+}
+
 int main()
 {
     char soil_text[50];
@@ -47,6 +63,11 @@ int main()
 
     soil_sensor_init();
     uart_send_string_blocking(USART_0, "Soil sensor init OK\r\n");
+
+    waterpump_init();
+    uart_send_string_blocking(USART_0,"waterpump init OK\r\n");
+
+    
 
     sei();
 
@@ -96,6 +117,12 @@ int main()
     }
 
     _delay_ms(5000);        // måling hvert 5 sekund
+
+    //vandpumpe
+    char message[100];
+        if (wifi_receive_message(message, sizeof(message))) {  // Hvis der er en besked
+            handle_tcp_command(message);  // Håndter beskeden (f.eks. vandpumpe)
+        }
 }
 
     return 0;
