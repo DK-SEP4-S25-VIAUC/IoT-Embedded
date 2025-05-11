@@ -15,6 +15,7 @@ static uint8_t _buff[100];
 static uint8_t _index = 0;
 volatile static bool _done = false;
 static uint8_t pump_time = 0;
+static char sensor_payload[100];
 
 void console_rx(uint8_t _rx)
 {
@@ -83,47 +84,46 @@ int main()
 
     while (1)
 {
-    if (_done)
-    {
-        wifi_command_TCP_transmit(_buff, strlen((char*)_buff));
-        uart_send_string_blocking(USART_0, "Sent user input via TCP\r\n");
-        _done = false;
-    }
-
-    /* jordfugtighed */
-
-    uint8_t humidity = soil_sensor_read();
-    sprintf(soil_text, "{\"soil_humidity_value\":%d}\r\n", humidity);
-
-    wifi_command_TCP_transmit((uint8_t*)soil_text, strlen(soil_text));
-    uart_send_string_blocking(USART_0, "Sent: ");
-    uart_send_string_blocking(USART_0, soil_text);
-
-    _delay_ms(60000);  //1min
-
-    /*  temperatur  */
-    
-    if (temperature_reader_get(&temperature) == TEMP_OK)
-    {
-        sprintf(temp_text, "{\"temperature_value\":%d}\r\n", temperature);
-
-        wifi_command_TCP_transmit((uint8_t*)temp_text, strlen(temp_text));
-        uart_send_string_blocking(USART_0, "Sent: ");
-        uart_send_string_blocking(USART_0, temp_text);
-    }
-    else
-    {
-        uart_send_string_blocking(USART_0, "Failed to read temperature\r\n");
-    }
-
-    _delay_ms(5000);        // måling hvert 5 sekund
-
-    //vandpumpe
-    char message[100];
-        if (wifi_receive_message(message, sizeof(message))) {  // Hvis der er en besked
-            handle_tcp_command(message);  // Håndter beskeden (f.eks. vandpumpe)
-        }
-}
+     /* 1) – send manuelle UART‑indtastninger videre til serveren */
+     if (_done)
+     {
+         wifi_command_TCP_transmit(_buff, strlen((char*)_buff));
+         uart_send_string_blocking(USART_0, "Sent user input via TCP\r\n");
+         _done = false;
+     }
+ 
+     /* 2) – læs jordfugtighed og temperatur */
+     uint8_t humidity      = soil_sensor_read();
+     uint8_t temperature   = 0;
+     bool    temp_ok       = (temperature_reader_get(&temperature) == TEMP_OK);
+ 
+     /* 3) – byg én samlet JSON‑streng */
+     if (temp_ok)
+     {
+         sprintf(sensor_payload,"{\"soil_humidity\":%d,\"air_temperature\":%d}\r\n",humidity, temperature);
+ 
+         /* 4) – send til serveren */
+         wifi_command_TCP_transmit((uint8_t*)sensor_payload,
+                                   strlen(sensor_payload));
+         uart_send_string_blocking(USART_0, "Sent: ");
+         uart_send_string_blocking(USART_0, sensor_payload);
+     }
+     else
+     {
+         uart_send_string_blocking(USART_0,
+                                   "Failed to read temperature\r\n");
+     }
+ 
+     /* 5) – håndter evt. kommando til vandpumpe (hvis/når den virker) */
+     char message[100];
+     if (wifi_receive_message(message, sizeof(message)))
+     {
+         handle_tcp_waterpump_command(message);
+     }
+ 
+     /* 6) – vent et minut før næste måling */
+     _delay_ms(60000);
+ }
 
     return 0;
 }
