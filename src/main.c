@@ -68,7 +68,6 @@ int main()
     waterpump_init();
     uart_send_string_blocking(USART_0,"waterpump init OK\r\n");
 
-    
 
     sei();
 
@@ -81,8 +80,6 @@ int main()
      /*  Opret TCP‑forbindelse */
         uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
         wifi_command_create_TCP_connection("172.205.86.121", 5000, NULL, NULL);
-
-        uart_send_string_blocking(USART_0, "Welcome from SEP4 IoT hardware!\r\n");
         uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
 
      if (_done)
@@ -111,8 +108,7 @@ int main()
      }
      else
      {
-         uart_send_string_blocking(USART_0,
-                                   "Failed to read temperature\r\n");
+         uart_send_string_blocking(USART_0,"Failed to read temperature\r\n");
      }
  
      /* håndter evt. kommando til vandpumpe (hvis/når den virker) */
@@ -126,7 +122,7 @@ int main()
         wifi_command_close_TCP_connection();
         uart_send_string_blocking(USART_0, "TCP closed\r\n");
 
-     /* 6) – vent ti min før næste måling */
+     /* vent ti min før næste måling */
      _delay_ms(600000);
  }
 
