@@ -84,7 +84,6 @@ int main()
 
     while (1)
 {
-     /* 1) – send manuelle UART‑indtastninger videre til serveren */
      if (_done)
      {
          wifi_command_TCP_transmit(_buff, strlen((char*)_buff));
@@ -92,17 +91,17 @@ int main()
          _done = false;
      }
  
-     /* 2) – læs jordfugtighed og temperatur */
+     /*  læs jordfugtighed og temperatur */
      uint8_t humidity      = soil_sensor_read();
      uint8_t temperature   = 0;
      bool    temp_ok       = (temperature_reader_get(&temperature) == TEMP_OK);
  
-     /* 3) – byg én samlet JSON‑streng */
+     /*  én samlet JSON‑streng */
      if (temp_ok)
      {
          sprintf(sensor_payload,"{\"soil_humidity\":%d,\"air_temperature\":%d}\r\n",humidity, temperature);
  
-         /* 4) – send til serveren */
+
          wifi_command_TCP_transmit((uint8_t*)sensor_payload,
                                    strlen(sensor_payload));
          uart_send_string_blocking(USART_0, "Sent: ");
