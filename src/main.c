@@ -76,18 +76,18 @@ int main()
     wifi_command_join_AP("TASKALE70", "cen7936219can");
     uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
 
-    /*  OPRET TCP‑FORBINDELSE */
-
-    uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
-    wifi_command_create_TCP_connection("4.209.30.127 ", 5000, NULL, NULL);
-    uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
-
-    uart_send_string_blocking(USART_0, "Welcome from SEP4 IoT hardware!\n");
-
     while (1)
 {
+     /*  Opret TCP‑forbindelse */
+        uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
+        wifi_command_create_TCP_connection("172.205.86.121", 5000, NULL, NULL);
+
+        uart_send_string_blocking(USART_0, "Welcome from SEP4 IoT hardware!\r\n");
+        uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
+
      if (_done)
      {
+        
          wifi_command_TCP_transmit(_buff, strlen((char*)_buff));
          uart_send_string_blocking(USART_0, "Sent user input via TCP\r\n");
          _done = false;
@@ -122,13 +122,12 @@ int main()
          handle_tcp_waterpump_command(message);
      }*/
 
-     /* LUK TCP‑FORBINDELSEN 
-     wifi_command_close_TCP_connection();
-     uart_send_string_blocking(USART_0,"TCP closed\r\n");
+     /* Luk TCP‑forbindelsen */
+        wifi_command_close_TCP_connection();
+        uart_send_string_blocking(USART_0, "TCP closed\r\n");
 
-     */
-     /* 6) – vent en time før næste måling */
-     _delay_ms(3600000);
+     /* 6) – vent ti min før næste måling */
+     _delay_ms(600000);
  }
 
     return 0;
