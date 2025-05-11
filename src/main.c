@@ -37,7 +37,7 @@ void console_rx(uint8_t _rx)
 }
 
 // Funktion til at modtage TCP-besked og handle på vandpumpen
-void handle_tcp_waterpump_command(char* message) {
+/*void handle_tcp_waterpump_command(char* message) {
     if (strstr(message, "water")) {
         char* time_str = strstr(message, "\"sec\":");
         if (time_str) {
@@ -49,7 +49,7 @@ void handle_tcp_waterpump_command(char* message) {
     }
     //Besked eksempel: {"cmd":"water", "sec":10}
 }
-
+*/
 int main()
 {
     char soil_text[50];
@@ -76,11 +76,13 @@ int main()
     wifi_command_join_AP("TASKALE70", "cen7936219can");
     uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
 
+    /*  OPRET TCP‑FORBINDELSE */
+
     uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
-    wifi_command_create_TCP_connection("20.13.198.93", 5000, NULL, NULL);
+    wifi_command_create_TCP_connection("4.209.30.127 ", 5000, NULL, NULL);
     uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
 
-    wifi_command_TCP_transmit((uint8_t*)"Welcome from SEP4 IoT hardware!\n", 32);
+    uart_send_string_blocking(USART_0, "Welcome from SEP4 IoT hardware!\n");
 
     while (1)
 {
@@ -113,15 +115,20 @@ int main()
                                    "Failed to read temperature\r\n");
      }
  
-     /* 5) – håndter evt. kommando til vandpumpe (hvis/når den virker) */
-     char message[100];
+     /* håndter evt. kommando til vandpumpe (hvis/når den virker) */
+     /*char message[100];
      if (wifi_receive_message(message, sizeof(message)))
      {
          handle_tcp_waterpump_command(message);
-     }
- 
-     /* 6) – vent et minut før næste måling */
-     _delay_ms(60000);
+     }*/
+
+     /* LUK TCP‑FORBINDELSEN 
+     wifi_command_close_TCP_connection();
+     uart_send_string_blocking(USART_0,"TCP closed\r\n");
+
+     */
+     /* 6) – vent en time før næste måling */
+     _delay_ms(3600000);
  }
 
     return 0;
