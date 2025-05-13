@@ -10,121 +10,162 @@
 #include <stdbool.h>
 #include <avr/interrupt.h>
 
+#define INITIAL_WATERING_TIME_SEC 2
+#define SENSOR_UPLOAD_INTERVAL_MS 600000UL   // 10 min
+#define KEEPALIVE_INTERVAL_MS      120000UL   // 2 min (skal være under 3 min ellers timeout i server)
 
-static uint8_t _buff[100];
-static uint8_t _index = 0;
-volatile static bool _done = false;
-static uint8_t pump_time = 0;
-static char sensor_payload[100];
 
-void console_rx(uint8_t _rx)
+
+static uint8_t   console_buff[100];
+static uint8_t   console_idx  = 0;
+volatile bool    console_done = false;
+
+static char      tcp_rx_buf[128];
+volatile uint8_t pump_seconds_requested = 0;   // sættes i TCP‑callback
+
+
+//  millis() – simpel stub (evt. Timer0 overflow‑interrupt på AVR)
+static volatile uint32_t _millis = 0;
+ISR(TIMER0_OVF_vect) {                        // 1 ms pr. overflow (tilpas prescaler)
+    ++_millis;
+}
+static inline uint32_t millis(void) {
+    uint32_t m;
+    uint8_t sreg = SREG; cli(); m = _millis; SREG = sreg;
+    return m;
+}
+
+
+//  UART‑modtagehandler
+static void console_rx(uint8_t rx)
 {
-    uart_send_blocking(USART_0, _rx);
-    if (('\r' != _rx) && ('\n' != _rx))
-    {
-        if (_index < 100 - 1)
-        {
-            _buff[_index++] = _rx;
+    uart_send_blocking(USART_0, rx);          // ekko til terminal
+
+    if (rx != '\r' && rx != '\n') {
+        if (console_idx < sizeof console_buff - 1) {
+            console_buff[console_idx++] = rx;
         }
-    }
-    else
-    {
-        _buff[_index] = '\0';
-        _index = 0;
-        _done = true;
+    } else {
+        console_buff[console_idx] = '\0';
+        console_idx  = 0;
+        console_done = true;
         uart_send_blocking(USART_0, '\n');
     }
 }
 
-// Funktion til at modtage TCP-besked og handle på vandpumpen
-/*void handle_tcp_waterpump_command(char* message) {
-    if (strstr(message, "water")) {
-        char* time_str = strstr(message, "\"sec\":");
-        if (time_str) {
-            pump_time = atoi(time_str + 6);  // Konverter tiden fra string til integer
-            if (pump_time > 0) {
-                waterpump_run(pump_time);  // Kører pumpen i den ønskede tid
-            }
-        }
-    }
-    //Besked eksempel: {"cmd":"water", "sec":10}
-}
-*/
-int main()
-{
-    char soil_text[50];
-    char temp_text[50];
-    uint8_t temperature = 0;
 
+static void tcp_message_callback(void)
+{
+    /* NUL‑termineret buffer antages */
+    uart_send_string_blocking(USART_0, "Recieved: ");
+    uart_send_string_blocking(USART_0, tcp_rx_buf);
+    uart_send_string_blocking(USART_0, "");
+
+    /*  find "cmd"   */
+    char *cmd_ptr = strcasestr(tcp_rx_buf, "\"cmd\"");
+    if (!cmd_ptr) return;                        // ingen cmd‑felt
+
+    /* find næste kolon og næste citationstegn   */
+    cmd_ptr = strchr(cmd_ptr, ':');
+    if (!cmd_ptr) return;
+    cmd_ptr = strchr(cmd_ptr, '"');
+    if (!cmd_ptr) return;
+    ++cmd_ptr;                                   // peg på selve værdien
+
+    /* sammenligner værdien (indtil næste ")         */
+    if (strncasecmp(cmd_ptr, "water", 5) != 0) return;   // ikke water‑cmd
+
+    /*  find "sec" feltet uanset mellemrum / rækkefølge osv        */
+    char *sec_ptr = strcasestr(tcp_rx_buf, "\"sec\"");
+    if (!sec_ptr) return;
+    sec_ptr = strchr(sec_ptr, ':');
+    if (!sec_ptr) return;
+    uint16_t sec_val = (uint16_t)atoi(sec_ptr + 1);   // kolon + evt. mellemrum
+    if (sec_val == 0 || sec_val > 255) return;
+
+    pump_seconds_requested = (uint8_t)sec_val;
+    uart_send_string_blocking(USART_0, "sec = ");
+    char num[6]; sprintf(num, "%u", sec_val);
+    uart_send_string_blocking(USART_0, num);
+    uart_send_string_blocking(USART_0, "");
+} //  Eksempel: {"cmd":"water","sec":10}
+
+int main(void)
+{
+    char sensor_payload[64];
+
+    //inits
     uart_init(USART_0, 9600, console_rx);
     uart_send_string_blocking(USART_0, "Booting...\r\n");
 
-    wifi_init();
-    uart_send_string_blocking(USART_0, "WiFi init OK\r\n");
-
     soil_sensor_init();
-    uart_send_string_blocking(USART_0, "Soil sensor init OK\r\n");
-
+    uart_send_string_blocking(USART_0, "soil censor OK!\r\n");
     waterpump_init();
-    uart_send_string_blocking(USART_0,"waterpump init OK\r\n");
 
+    // start med at vande lidt
+    waterpump_run(INITIAL_WATERING_TIME_SEC);
+    uart_send_string_blocking(USART_0, "Initial watering done\r\n");
 
-    sei();
+    // Start millis‑timer  (Timer0, prescaler 64, 1 ms interrupt @ 16 MHz)
+    TCCR0A = 0;                  // normal mode
+    TCCR0B = (1 << CS01) | (1 << CS00); // prescaler 64
+    TIMSK0 = (1 << TOIE0);       // enable overflow IRQ
 
-    uart_send_string_blocking(USART_0, "Connecting to WiFi...\r\n");
+    // Wi‑Fi + TCP
+    wifi_init();
+     uart_send_string_blocking(USART_0, "Connecting to WiFi...\r\n");
     wifi_command_join_AP("TASKALE70", "cen7936219can");
-    uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
+     uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
 
-    while (1)
-{
-     /*  Opret TCP‑forbindelse */
-        uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
-        wifi_command_create_TCP_connection("172.205.86.121", 5000, NULL, NULL);
-        uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
+    uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
+    wifi_command_create_TCP_connection("4.208.23.45", 5000,tcp_message_callback, tcp_rx_buf);
+    uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
 
-     if (_done)
-     {
+    sei();                 
+
+    uint32_t next_upload_ms = millis();
+    uint32_t next_keepalive_ms = millis() + KEEPALIVE_INTERVAL_MS;
+
+    for (;;) {
+        /* Håndter vandpumpekommando fra TCP hvis der er nogen */
+        if (pump_seconds_requested) {
+            uint8_t sec = pump_seconds_requested; pump_seconds_requested = 0;
+            uart_send_string_blocking(USART_0, " Watering...\r\n");
+            waterpump_run(sec);
+            uart_send_string_blocking(USART_0, "Watering done\r\n");
+        }
+
+        uint32_t now = millis();
+
+        /* Upload sensordata hvert 10. minut */
+        if ((int32_t)(now - next_upload_ms) >= 0) {
+            uint8_t hum  = soil_sensor_read();
+            uint8_t temp = 0;
+            if (temperature_reader_get(&temp) == TEMP_OK) {
+                sprintf(sensor_payload, "{\"soil_humidity\":%u,\"air_temperature\":%u}\r\n", hum, temp);
+                wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
+                uart_send_string_blocking(USART_0, "Sent ");
+                uart_send_string_blocking(USART_0, sensor_payload);
+            }
+            next_upload_ms += SENSOR_UPLOAD_INTERVAL_MS;
+        }
+
+        /* Keep‑alive ping hver 2 min så serveren ikke interrupter */
+        if ((int32_t)(now - next_keepalive_ms) >= 0) {
+            wifi_command_TCP_transmit((uint8_t*)"PING\r\n", 6);
+            uart_send_string_blocking(USART_0, "PING sent\r\n");
+            next_keepalive_ms += KEEPALIVE_INTERVAL_MS;
+        }
+
         
-         wifi_command_TCP_transmit(_buff, strlen((char*)_buff));
-         uart_send_string_blocking(USART_0, "Sent user input via TCP\r\n");
-         _done = false;
-     }
- 
-     /*  læs jordfugtighed og temperatur */
-     uint8_t humidity      = soil_sensor_read();
-     uint8_t temperature   = 0;
-     bool    temp_ok       = (temperature_reader_get(&temperature) == TEMP_OK);
- 
-     /*  én samlet JSON‑streng */
-     if (temp_ok)
-     {
-         sprintf(sensor_payload,"{\"soil_humidity\":%d,\"air_temperature\":%d}\r\n",humidity, temperature);
- 
+        if (console_done) {
+            wifi_command_TCP_transmit(console_buff,
+                                      strlen((char *)console_buff));
+            uart_send_string_blocking(USART_0,
+                                      "Sent console input via TCP\r\n");
+            console_done = false;
+        }
+    }
 
-         wifi_command_TCP_transmit((uint8_t*)sensor_payload,
-                                   strlen(sensor_payload));
-         uart_send_string_blocking(USART_0, "Sent: ");
-         uart_send_string_blocking(USART_0, sensor_payload);
-     }
-     else
-     {
-         uart_send_string_blocking(USART_0,"Failed to read temperature\r\n");
-     }
- 
-     /* håndter evt. kommando til vandpumpe (hvis/når den virker) */
-     /*char message[100];
-     if (wifi_receive_message(message, sizeof(message)))
-     {
-         handle_tcp_waterpump_command(message);
-     }*/
-
-     /* Luk TCP‑forbindelsen */
-        wifi_command_close_TCP_connection();
-        uart_send_string_blocking(USART_0, "TCP closed\r\n");
-
-     /* vent ti min før næste måling */
-     _delay_ms(600000);
- }
-
-    return 0;
+    return 0; 
 }
