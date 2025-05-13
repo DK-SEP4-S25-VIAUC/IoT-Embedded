@@ -2,30 +2,43 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-#define RELAY_PORT  PORTC    
-#define RELAY_DDR   DDRC 
-#define RELAY_PIN   PC7       
 
+#define PUMP_PORT   PORTC
+#define PUMP_DDR    DDRC
+#define PUMP_PIN    PC7          // svarer til digital pin 30
+#define PUMP_ACTIVE_HIGH  1      // tændes med HIGH
 
-// Initialiserer vandet pumpen
-void waterpump_init(void) {
-    RELAY_DDR  |= (1 << RELAY_PIN);  // Sætter pin som udgang
-    RELAY_PORT |= (1 << RELAY_PIN);  // er off som standard
+static inline void pump_set_off(void)
+{
+#if PUMP_ACTIVE_HIGH
+    PUMP_PORT &= ~_BV(PUMP_PIN);   // OFF = LOW
+#else
+    PUMP_PORT |=  _BV(PUMP_PIN);   // OFF = HIGH
+#endif
 }
 
-// Tænder vandpumpen
-void waterpump_on(void) {
-    RELAY_PORT &= ~(1 << RELAY_PIN);  
+static inline void pump_set_on(void)
+{
+#if PUMP_ACTIVE_HIGH
+    PUMP_PORT |=  _BV(PUMP_PIN);   // ON = HIGH
+#else
+    PUMP_PORT &= ~_BV(PUMP_PIN);   // ON = LOW
+#endif
 }
 
-// Slukker vandpumpen
-void waterpump_off(void) {
-    RELAY_PORT |= (1 << RELAY_PIN); 
+void waterpump_init(void)
+{
+    pump_set_off();               // off‑niveau FØR pin bliver output
+    PUMP_DDR |= _BV(PUMP_PIN);    //  PC7 output
 }
 
-// Kører pumpen i et bestemt antal sekunder
-void waterpump_run(uint32_t seconds) {
-    waterpump_on();  // Tænd pumpen
-    _delay_ms(seconds * 1000);  // Vent i sekunder
-    waterpump_off();  // Sluk pumpen
+void waterpump_on(void)  { pump_set_on();  }
+void waterpump_off(void) { pump_set_off(); }
+
+void waterpump_run(uint8_t sec)
+{
+    waterpump_on();
+    while (sec--)
+        _delay_ms(1000);
+    waterpump_off();
 }
