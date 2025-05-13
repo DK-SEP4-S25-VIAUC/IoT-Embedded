@@ -57,38 +57,43 @@ static void console_rx(uint8_t rx)
 static void tcp_message_callback(void)
 {
     /* NUL‑termineret buffer antages */
-    uart_send_string_blocking(USART_0, "Recieved: ");
+    uart_send_string_blocking(USART_0, "Received: ");
     uart_send_string_blocking(USART_0, tcp_rx_buf);
     uart_send_string_blocking(USART_0, "");
 
-    /*  find "cmd"   */
+    /* find "cmd" */
     char *cmd_ptr = strcasestr(tcp_rx_buf, "\"cmd\"");
-    if (!cmd_ptr) return;                        // ingen cmd‑felt
+    if (!cmd_ptr) return;  // ingen cmd‑felt
 
-    /* find næste kolon og næste citationstegn   */
+    /* find næste kolon og næste citationstegn */
     cmd_ptr = strchr(cmd_ptr, ':');
     if (!cmd_ptr) return;
     cmd_ptr = strchr(cmd_ptr, '"');
     if (!cmd_ptr) return;
-    ++cmd_ptr;                                   // peg på selve værdien
+    ++cmd_ptr;  // peg på selve værdien
 
-    /* sammenligner værdien (indtil næste ")         */
-    if (strncasecmp(cmd_ptr, "water", 5) != 0) return;   // ikke water‑cmd
+    /* sammenligner værdien (indtil næste ") */
+    if (strncasecmp(cmd_ptr, "water", 5) != 0) return;  // ikke water‑cmd
 
-    /*  find "sec" feltet uanset mellemrum / rækkefølge osv        */
-    char *sec_ptr = strcasestr(tcp_rx_buf, "\"sec\"");
-    if (!sec_ptr) return;
-    sec_ptr = strchr(sec_ptr, ':');
-    if (!sec_ptr) return;
-    uint16_t sec_val = (uint16_t)atoi(sec_ptr + 1);   // kolon + evt. mellemrum
-    if (sec_val == 0 || sec_val > 255) return;
+    /* find "ml" feltet */
+    char *ml_ptr = strcasestr(tcp_rx_buf, "\"ml\"");
+    if (!ml_ptr) return;
+    ml_ptr = strchr(ml_ptr, ':');
+    if (!ml_ptr) return;
+    uint16_t ml_val = (uint16_t)atoi(ml_ptr + 1);  // kolon + evt. mellemrum
+    if (ml_val == 0 || ml_val > 4000) return;  // hvis volumen er 0 eller for høj
 
-    pump_seconds_requested = (uint8_t)sec_val;
-    uart_send_string_blocking(USART_0, "sec = ");
-    char num[6]; sprintf(num, "%u", sec_val);
+    // Beregn tiden (i sekunder) pumpen skal køre for at pumpe den ønskede mængde ml
+    // 4000 ml pr. minut -> 66.67 ml pr. sekund
+    uint16_t pump_time_sec = (uint16_t)((ml_val / 66.67));  // 66.67 ml per sekund
+
+    pump_seconds_requested = pump_time_sec;  // opdater det ønskede antal sekunder
+    uart_send_string_blocking(USART_0, "ml = ");
+    char num[6];
+    sprintf(num, "%u", ml_val);
     uart_send_string_blocking(USART_0, num);
     uart_send_string_blocking(USART_0, "");
-} //  Eksempel: {"cmd":"water","sec":10}
+} //  Eksempel: {"cmd":"water","ml":10}
 
 int main(void)
 {
