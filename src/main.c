@@ -84,8 +84,8 @@ static void tcp_message_callback(void)
     if (ml_val == 0 || ml_val > 4000) return;  // hvis volumen er 0 eller for høj
 
     // Beregn tiden (i sekunder) pumpen skal køre for at pumpe den ønskede mængde ml
-    // 4000 ml pr. minut -> 66.67 ml pr. sekund
-    uint16_t pump_time_sec = (uint16_t)((ml_val / 66.67));  // 66.67 ml per sekund
+    // 45.45 ml pr. sekund
+    uint16_t pump_time_sec = (uint16_t)((ml_val / 45.45));  // 45.45 ml per sekund
 
     pump_seconds_requested = pump_time_sec;  // opdater det ønskede antal sekunder
     uart_send_string_blocking(USART_0, "ml = ");
@@ -93,7 +93,7 @@ static void tcp_message_callback(void)
     sprintf(num, "%u", ml_val);
     uart_send_string_blocking(USART_0, num);
     uart_send_string_blocking(USART_0, "");
-} //  Eksempel: {"cmd":"water","ml":10}
+}//  Eksempel: {"cmd":"water","ml":10}
 
 int main(void)
 {
