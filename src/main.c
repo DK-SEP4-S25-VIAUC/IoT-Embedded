@@ -110,7 +110,7 @@ static bool ping_or_reconnect(void)
     wifi_command_close_TCP_connection();
 
     // Ny forbindelse
-    if (wifi_command_create_TCP_connection("4.208.23.45",5000,tcp_message_callback,tcp_rx_buf) == WIFI_OK)
+    if (wifi_command_create_TCP_connection("4.207.72.20",5000,tcp_message_callback,tcp_rx_buf) == WIFI_OK)
     {
         uart_send_string_blocking(USART_0, "TCP reconnected!\r\n");
         return true; 
@@ -148,7 +148,7 @@ int main(void)
      uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
 
     uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
-    wifi_command_create_TCP_connection("4.208.23.45", 5000,tcp_message_callback, tcp_rx_buf);
+    wifi_command_create_TCP_connection("4.207.72.20", 5000,tcp_message_callback, tcp_rx_buf);
     uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
 
     sei();                 
