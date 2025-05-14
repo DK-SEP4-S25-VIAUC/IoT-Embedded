@@ -3,6 +3,7 @@
 #include "soil.h"
 #include "temperature_reader.h"
 #include "waterpump.h"
+#include "light.h"  // Inkluder lyssensor driveren
 #include <util/delay.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -11,10 +12,8 @@
 #include <avr/interrupt.h>
 
 #define INITIAL_WATERING_TIME_SEC 2
-#define SENSOR_UPLOAD_INTERVAL_MS 10000UL   // 10 min
-#define KEEPALIVE_INTERVAL_MS      6000000UL   // 2 min (skal være under 3 min ellers timeout i server)
-
-
+#define SENSOR_UPLOAD_INTERVAL_MS 1000UL   // 10 min //med light
+#define KEEPALIVE_INTERVAL_MS      120000UL   // 2 min (skal være under 3 min ellers timeout i server)
 
 static uint8_t   console_buff[100];
 static uint8_t   console_idx  = 0;
@@ -23,10 +22,9 @@ volatile bool    console_done = false;
 static char      tcp_rx_buf[128];
 volatile uint8_t pump_seconds_requested = 0;   // sættes i TCP‑callback
 
-
-//  millis() – simpel stub (evt. Timer0 overflow‑interrupt på AVR)
+// millis() – simpel stub (evt. Timer0 overflow‑interrupt på AVR)
 static volatile uint32_t _millis = 0;
-ISR(TIMER0_OVF_vect) {                        // 1 ms pr. overflow (tilpas prescaler)
+ISR(TIMER0_OVF_vect) {                        // 1 ms pr. overflow (tilpas prescaler)
     ++_millis;
 }
 static inline uint32_t millis(void) {
@@ -35,8 +33,7 @@ static inline uint32_t millis(void) {
     return m;
 }
 
-
-//  UART‑modtagehandler
+// UART-modtagehandler
 static void console_rx(uint8_t rx)
 {
     uart_send_blocking(USART_0, rx);          // ekko til terminal
@@ -53,17 +50,16 @@ static void console_rx(uint8_t rx)
     }
 }
 
-
 static void tcp_message_callback(void)
 {
-    /* NUL‑termineret buffer antages */
+    /* NUL-termineret buffer antages */
     uart_send_string_blocking(USART_0, "Received: ");
     uart_send_string_blocking(USART_0, tcp_rx_buf);
     uart_send_string_blocking(USART_0, "");
 
     /* find "cmd" */
     char *cmd_ptr = strcasestr(tcp_rx_buf, "\"cmd\"");
-    if (!cmd_ptr) return;  // ingen cmd‑felt
+    if (!cmd_ptr) return;  // ingen cmd-felt
 
     /* find næste kolon og næste citationstegn */
     cmd_ptr = strchr(cmd_ptr, ':');
@@ -73,7 +69,7 @@ static void tcp_message_callback(void)
     ++cmd_ptr;  // peg på selve værdien
 
     /* sammenligner værdien (indtil næste ") */
-    if (strncasecmp(cmd_ptr, "water", 5) != 0) return;  // ikke water‑cmd
+    if (strncasecmp(cmd_ptr, "water", 5) != 0) return;  // ikke water-cmd
 
     /* find "ml" feltet */
     char *ml_ptr = strcasestr(tcp_rx_buf, "\"ml\"");
@@ -93,37 +89,43 @@ static void tcp_message_callback(void)
     sprintf(num, "%u", ml_val);
     uart_send_string_blocking(USART_0, num);
     uart_send_string_blocking(USART_0, "");
-}//  Eksempel: {"cmd":"water","ml":10}
+}
 
 int main(void)
 {
     char sensor_payload[64];
 
-    //inits
+    // inits
     uart_init(USART_0, 9600, console_rx);
     uart_send_string_blocking(USART_0, "Booting...\r\n");
 
     soil_sensor_init();
-    uart_send_string_blocking(USART_0, "soil censor OK!\r\n");
+    uart_send_string_blocking(USART_0, "soil sensor OK!\r\n");
+
     waterpump_init();
+    uart_send_string_blocking(USART_0, "Water pump initialized!\r\n");
+
+    // Initialisering af lyssensor
+    light_init();
+    uart_send_string_blocking(USART_0, "Light sensor initialized!\r\n");
 
     // start med at vande lidt
     waterpump_run(INITIAL_WATERING_TIME_SEC);
     uart_send_string_blocking(USART_0, "Initial watering done\r\n");
 
-    // Start millis‑timer  (Timer0, prescaler 64, 1 ms interrupt @ 16 MHz)
+    // Start millis‑timer  (Timer0, prescaler 64, 1 ms interrupt @ 16 MHz)
     TCCR0A = 0;                  // normal mode
     TCCR0B = (1 << CS01) | (1 << CS00); // prescaler 64
     TIMSK0 = (1 << TOIE0);       // enable overflow IRQ
 
-    // Wi‑Fi + TCP
+    // Wi-Fi + TCP
     wifi_init();
-     uart_send_string_blocking(USART_0, "Connecting to WiFi...\r\n");
-    //wifi_command_join_AP("TASKALE70", "cen7936219can");
-     uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
+    uart_send_string_blocking(USART_0, "Connecting to WiFi...\r\n");
+    wifi_command_join_AP("ARRIS-FAFF", "et3T7tRaeLBr");
+    uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
 
     uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
-    //wifi_command_create_TCP_connection("4.207.72.20", 5000,tcp_message_callback, tcp_rx_buf);
+    wifi_command_create_TCP_connection("192.168.0.5", 5000, tcp_message_callback, tcp_rx_buf);
     uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
 
     sei();                 
@@ -143,33 +145,31 @@ int main(void)
         uint32_t now = millis();
 
         /* Upload sensordata hvert 10. minut */
-
-        //gennemsnit af soilhumidity, 10 pr 0.1 sek
         if ((int32_t)(now - next_upload_ms) >= 0) {
-            uint8_t soil_hum = soil_sensor_read();
-            uint8_t air_temp = 0;
-            uint8_t air_hum = 0;
-
-            if (temperature_and_humidity_get(&air_temp, &air_hum) == TEMP_OK) {
-                sprintf(sensor_payload, "{\"soil_humidity\":%u,\"air_temperature\":%u,\"air_humidity\":%u}\r\n", soil_hum, air_temp, air_hum);
-                //wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
+            uint8_t hum = soil_sensor_read();
+            uint8_t temp = 0;
+            if (temperature_reader_get(&temp) == TEMP_OK) {
+                uint16_t light_value = light_read();  // Læs lysværdien
+                sprintf(sensor_payload, "{\"soil_humidity\":%u,\"air_temperature\":%u,\"light\":%u}\r\n", hum, temp, light_value);
+                wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
                 uart_send_string_blocking(USART_0, "Sent ");
                 uart_send_string_blocking(USART_0, sensor_payload);
             }
             next_upload_ms += SENSOR_UPLOAD_INTERVAL_MS;
         }
 
-        /* Keep‑alive ping hver 2 min så serveren ikke interrupter */
+        /* Keep-alive ping hver 2 min så serveren ikke interrupter */
         if ((int32_t)(now - next_keepalive_ms) >= 0) {
-            //wifi_command_TCP_transmit((uint8_t*)"PING\r\n", 6);
-            //uart_send_string_blocking(USART_0, "PING sent\r\n");
+            wifi_command_TCP_transmit((uint8_t*)"PING\r\n", 6);
+            uart_send_string_blocking(USART_0, "PING sent\r\n");
             next_keepalive_ms += KEEPALIVE_INTERVAL_MS;
         }
 
-        
         if (console_done) {
-            //wifi_command_TCP_transmit(console_buff, strlen((char *)console_buff));
-            //uart_send_string_blocking(USART_0, "Sent console input via TCP\r\n");
+            wifi_command_TCP_transmit(console_buff,
+                                      strlen((char *)console_buff));
+            uart_send_string_blocking(USART_0,
+                                      "Sent console input via TCP\r\n");
             console_done = false;
         }
     }
