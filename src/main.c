@@ -95,6 +95,31 @@ static void tcp_message_callback(void)
     uart_send_string_blocking(USART_0, "");
 }//  Eksempel: {"cmd":"water","ml":10}
 
+static bool ping_or_reconnect(void)
+{
+    // prøver at sende PING til serveren
+    if (wifi_command_TCP_transmit((uint8_t*)"PING\r\n", 6) == WIFI_OK) {
+        uart_send_string_blocking(USART_0, "PING sent\r\n");
+        return true;
+    }
+
+    // socket lukkes
+    uart_send_string_blocking(USART_0, "PING failed, reconnecting…\r\n");
+
+    // Lukker session ned
+    wifi_command_close_TCP_connection();
+
+    // Ny forbindelse
+    if (wifi_command_create_TCP_connection("4.208.23.45",5000,tcp_message_callback,tcp_rx_buf) == WIFI_OK)
+    {
+        uart_send_string_blocking(USART_0, "TCP reconnected!\r\n");
+        return true; 
+    }
+
+    uart_send_string_blocking(USART_0, "TCP reconnect failed\r\n");
+    return false;
+}
+
 int main(void)
 {
     char sensor_payload[64];
@@ -157,8 +182,7 @@ int main(void)
 
         /* Keep‑alive ping hver 2 min så serveren ikke interrupter */
         if ((int32_t)(now - next_keepalive_ms) >= 0) {
-            wifi_command_TCP_transmit((uint8_t*)"PING\r\n", 6);
-            uart_send_string_blocking(USART_0, "PING sent\r\n");
+            ping_or_reconnect();
             next_keepalive_ms += KEEPALIVE_INTERVAL_MS;
         }
 
