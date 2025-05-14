@@ -1,7 +1,7 @@
 #include "wifi.h"
 #include "uart.h"
 #include "soil.h"
-#include "dht11.h"
+#include "temperature_reader.h"
 #include "waterpump.h"
 #include <util/delay.h>
 #include <stdlib.h>
@@ -11,8 +11,8 @@
 #include <avr/interrupt.h>
 
 #define INITIAL_WATERING_TIME_SEC 2
-#define SENSOR_UPLOAD_INTERVAL_MS 600000UL   // 10 min
-#define KEEPALIVE_INTERVAL_MS      120000UL   // 2 min (skal være under 3 min ellers timeout i server)
+#define SENSOR_UPLOAD_INTERVAL_MS 10000UL   // 10 min
+#define KEEPALIVE_INTERVAL_MS      6000000UL   // 2 min (skal være under 3 min ellers timeout i server)
 
 
 
@@ -103,10 +103,8 @@ int main(void)
     uart_init(USART_0, 9600, console_rx);
     uart_send_string_blocking(USART_0, "Booting...\r\n");
 
-    soil_init();
-    uart_send_string_blocking(USART_0, "soil sensor OK!\r\n");
-    dht11_init();
-    uart_send_string_blocking(USART_0, "dht11 sensor OK\r\n");
+    soil_sensor_init();
+    uart_send_string_blocking(USART_0, "soil censor OK!\r\n");
     waterpump_init();
 
     // start med at vande lidt
@@ -121,11 +119,11 @@ int main(void)
     // Wi‑Fi + TCP
     wifi_init();
      uart_send_string_blocking(USART_0, "Connecting to WiFi...\r\n");
-    wifi_command_join_AP("TASKALE70", "cen7936219can");
+    //wifi_command_join_AP("TASKALE70", "cen7936219can");
      uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
 
     uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
-    wifi_command_create_TCP_connection("4.207.72.20", 5000,tcp_message_callback, tcp_rx_buf);
+    //wifi_command_create_TCP_connection("4.207.72.20", 5000,tcp_message_callback, tcp_rx_buf);
     uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
 
     sei();                 
@@ -148,48 +146,30 @@ int main(void)
 
         //gennemsnit af soilhumidity, 10 pr 0.1 sek
         if ((int32_t)(now - next_upload_ms) >= 0) {
+            uint8_t soil_hum = soil_sensor_read();
+            uint8_t air_temp = 0;
+            uint8_t air_hum = 0;
 
-            uint32_t sum = 0;
-            for (int i = 0; i < 10; i++) {
-                sum += soil_read();
-                _delay_ms(10);
-            }
-            uint16_t soil_raw = sum / 10;
-
-            //Kalibrering af soilhumidity
-            const uint16_t DRY = 600; //sæt laveste værdi for at definere tørt (0%)
-            const uint16_t WET = 860; //sæt højeste værdi for at definere vådt (100%)
-            int16_t soil_percent = (soil_raw - DRY) * 100 / (WET - DRY);
-            if (soil_percent < 0) soil_percent = 0;
-            if (soil_percent > 100) soil_percent = 100;
-
-
-
-            uint8_t temp_int = 0, temp_dec = 0;
-            uint8_t hum_int  = 0, hum_dec  = 0;
-
-            //til soilhumidity - brug "soil_percent" for at få i procent som er kalibreret, brug "soil_raw" for at få rå data til evt. kalibrering
-            if (dht11_get(&hum_int, &hum_dec, &temp_int, &temp_dec) == DHT11_OK) {
-                sprintf(sensor_payload, "{\"soil_humidity\":%u,\"air_temperature\":%u,\"air_humidity\":%u}\r\n", soil_percent, temp_dec, hum_dec);
-                wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
+            if (temperature_and_humidity_get(&air_temp, &air_hum) == TEMP_OK) {
+                sprintf(sensor_payload, "{\"soil_humidity\":%u,\"air_temperature\":%u,\"air_humidity\":%u}\r\n", soil_hum, air_temp, air_hum);
+                //wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
                 uart_send_string_blocking(USART_0, "Sent ");
                 uart_send_string_blocking(USART_0, sensor_payload);
             }
-
             next_upload_ms += SENSOR_UPLOAD_INTERVAL_MS;
         }
 
         /* Keep‑alive ping hver 2 min så serveren ikke interrupter */
         if ((int32_t)(now - next_keepalive_ms) >= 0) {
-            wifi_command_TCP_transmit((uint8_t*)"PING\r\n", 6);
-            uart_send_string_blocking(USART_0, "PING sent\r\n");
+            //wifi_command_TCP_transmit((uint8_t*)"PING\r\n", 6);
+            //uart_send_string_blocking(USART_0, "PING sent\r\n");
             next_keepalive_ms += KEEPALIVE_INTERVAL_MS;
         }
 
         
         if (console_done) {
-            wifi_command_TCP_transmit(console_buff, strlen((char *)console_buff));
-            uart_send_string_blocking(USART_0, "Sent console input via TCP\r\n");
+            //wifi_command_TCP_transmit(console_buff, strlen((char *)console_buff));
+            //uart_send_string_blocking(USART_0, "Sent console input via TCP\r\n");
             console_done = false;
         }
     }
