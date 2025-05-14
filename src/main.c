@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <avr/interrupt.h>
+#include "light.h"
 
 #define INITIAL_WATERING_TIME_SEC 2
 #define SENSOR_UPLOAD_INTERVAL_MS 10000UL   // 10 min
@@ -105,6 +106,9 @@ int main(void)
 
     soil_sensor_init();
     uart_send_string_blocking(USART_0, "soil censor OK!\r\n");
+    light_init();
+    uart_send_string_blocking(USART_0, "light sensor OK\r\n");
+    
     waterpump_init();
 
     // start med at vande lidt
@@ -147,11 +151,12 @@ int main(void)
         //gennemsnit af soilhumidity, 10 pr 0.1 sek
         if ((int32_t)(now - next_upload_ms) >= 0) {
             uint8_t soil_hum = soil_sensor_read();
+            uint16_t light_raw = light_read();  // Rå ADC-værdi 0–1023 (0 = lav lys, 1023 = høj lys)
             uint8_t air_temp = 0;
             uint8_t air_hum = 0;
 
             if (temperature_and_humidity_get(&air_temp, &air_hum) == TEMP_OK) {
-                sprintf(sensor_payload, "{\"soil_humidity\":%u,\"air_temperature\":%u,\"air_humidity\":%u}\r\n", soil_hum, air_temp, air_hum);
+                sprintf(sensor_payload, "{\"soil_humidity\":%u,\"air_temperature\":%u,\"air_humidity\":%u,\"light\":%u}\r\n", soil_hum, air_temp, air_hum, light_raw);
                 //wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
                 uart_send_string_blocking(USART_0, "Sent ");
                 uart_send_string_blocking(USART_0, sensor_payload);
