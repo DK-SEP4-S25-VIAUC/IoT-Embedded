@@ -18,8 +18,12 @@ void soil_sensor_init(void)
 
 uint8_t soil_sensor_read(void)
 {
-    const uint16_t dry = 450;     // kalibrér disse to værdier efter
-    const uint16_t wet = 188;     // egne målinger
+    const uint16_t dry = 450;
+    const uint16_t wet = 188;
+
+    // Skift til kanal A5 (ADC5)
+    ADMUX  = (ADMUX & 0xF0) | 0b00000101;
+    ADCSRB &= ~(1 << MUX5);  // Nulstil MUX5 for ADC0-7
 
     int16_t raw = read_adc_value();
     int16_t hum = (dry - raw) * 100 / (dry - wet);
