@@ -12,8 +12,8 @@
 #include "light.h"
 
 #define INITIAL_WATERING_TIME_SEC 2
-#define SENSOR_UPLOAD_INTERVAL_MS 10000UL   // 10 sek
-#define KEEPALIVE_INTERVAL_MS      600000UL // 10 min (under server timeout)
+#define SENSOR_UPLOAD_INTERVAL_MS 600000UL   // 10 min
+#define KEEPALIVE_INTERVAL_MS      120000UL   // 2 min (skal være under 3 min ellers timeout i server)
 
 static uint8_t   console_buff[100];
 static uint8_t   console_idx  = 0;
@@ -120,11 +120,11 @@ int main(void)
 
     wifi_init();
     uart_send_string_blocking(USART_0, "Connecting to WiFi...\r\n");
-    // wifi_command_join_AP("SSID", "password");
+     wifi_command_join_AP("TASKALE70", "cen7936219can");
     uart_send_string_blocking(USART_0, "WiFi connected!\r\n");
 
     uart_send_string_blocking(USART_0, "Connecting to TCP server...\r\n");
-    // wifi_command_create_TCP_connection("IP", port, tcp_message_callback, tcp_rx_buf);
+    wifi_command_create_TCP_connection("4.207.72.20", 5000,tcp_message_callback, tcp_rx_buf);
     uart_send_string_blocking(USART_0, "TCP connection established!\r\n");
 
     sei();
@@ -165,7 +165,7 @@ int main(void)
                 sprintf(sensor_payload,
                     "{\"soil_humidity\":%u,\"air_temperature\":%u,\"air_humidity\":%u,\"light_value\":%ld}\r\n",
                     soil_hum, air_temp, air_hum, light_lumen);
-                // wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
+               wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
                 uart_send_string_blocking(USART_0, "Sent ");
                 uart_send_string_blocking(USART_0, sensor_payload);
             }
