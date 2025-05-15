@@ -162,9 +162,7 @@ int main(void)
             uint8_t air_hum = 0;
 
             if (temperature_and_humidity_get(&air_temp, &air_hum) == TEMP_OK) {
-                sprintf(sensor_payload,
-                    "{\"soil_humidity\":%u,\"air_temperature\":%u,\"air_humidity\":%u,\"light_value\":%ld}\r\n",
-                    soil_hum, air_temp, air_hum, light_lumen);
+                sprintf(sensor_payload,"{\"soil_humidity\":%u,\"air_temperature\":%u,\"air_humidity\":%u,\"light_value\":%ld}\r\n",soil_hum, air_temp, air_hum, light_lumen);
                wifi_command_TCP_transmit((uint8_t*)sensor_payload, strlen(sensor_payload));
                 uart_send_string_blocking(USART_0, "Sent ");
                 uart_send_string_blocking(USART_0, sensor_payload);
